@@ -1,0 +1,30 @@
+    {
+      "name": "iceberg-weather-sink",
+      "config": {
+        "connector.class": "io.taboola.iceberg.connect.IcebergSinkConnector",
+        "tasks.max": "1",
+        "topics": "weather_raw_data",
+        "iceberg.catalog.type": "glue",
+        "iceberg.catalog.name": "aws_glue_catalog",
+        "iceberg.catalog.default.database": "weather_data_lake",
+        "iceberg.catalog.region": "us-west-1",
+        "iceberg.tables": "weather_events",
+        "iceberg.table.default.warehouse": "s3://vsr-weather-data-pipeline/raw/",
+        "iceberg.table.auto-create": "true",
+        "iceberg.schema.auto-create": "true",
+        "iceberg.table.write.format.default": "parquet",
+        "iceberg.table.format-version": "2",
+        "iceberg.table.partition-by": "city, hour(ingestion_timestamp_ms)",
+        "iceberg.table.write.target-file-size-bytes": "536870912",
+        "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+        "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "value.converter.schemas.enable": "false",
+        "key.converter.schemas.enable": "false",
+        "errors.log.enable": "true",
+        "errors.log.include.messages": "true",
+        "errors.deadletterqueue.topic.name": "iceberg_weather_sink_dlq",
+        "errors.deadletterqueue.topic.replication.factor": "1",
+        "errors.tolerance": "all"
+      }
+    }
+    

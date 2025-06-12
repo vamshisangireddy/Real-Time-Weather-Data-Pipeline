@@ -1,43 +1,91 @@
+    # docker-compose.yml
+    version: '3.8'
 
-# docker-compose.yml
-version: '3.8'
+    services:
+      zookeeper:
+        image: confluentinc/cp-zookeeper:7.5.0
+        hostname: zookeeper
+        container_name: zookeeper
+        ports:
+          - "2181:2181"
+        environment:
+          ZOOKEEPER_CLIENT_PORT: 2181
+          ZOOKEEPER_TICK_TIME: 2000
+        volumes:
+          - zookeeper-data:/var/lib/zookeeper/data
+          - zookeeper-log:/var/lib/zookeeper/log
 
-services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0 # Using Confluent's ZooKeeper image
-    hostname: zookeeper
-    container_name: zookeeper
-    ports:
-      - "2181:2181" # Expose ZooKeeper client port
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+      kafka:
+        image: confluentinc/cp-kafka:7.5.0
+        hostname: kafka
+        container_name: kafka
+        depends_on:
+          - zookeeper
+        ports:
+          - "9092:9092"
+          - "29092:29092"
+        environment:
+          KAFKA_BROKER_ID: 1
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+        volumes:
+          - kafka-data:/var/lib/kafka/data
+
+      connect:
+        image: confluentinc/cp-kafka-connect:7.5.0
+        hostname: connect
+        container_name: connect
+        depends_on:
+          - kafka
+        ports:
+          - "8083:8083"
+        environment:
+          CONNECT_BOOTSTRAP_SERVERS: kafka:29092
+          CONNECT_REST_PORT: 8083
+          CONNECT_GROUP_ID: connect-cluster
+          CONNECT_CONFIG_STORAGE_TOPIC: connect-configs
+          CONNECT_OFFSET_STORAGE_TOPIC: connect-offsets
+          CONNECT_STATUS_STORAGE_TOPIC: connect-status
+          CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+          CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+          CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: 'false' # Set to false if your JSON doesn't include schema
+
+          # --- CRITICAL: Install the Iceberg Sink Connector ---
+          # This command downloads and installs the Tabix Kafka Connect Iceberg connector.
+          # Ensure the version (0.0.10) is compatible or update as needed.
+          CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/bin/confluent-hub install --no-prompt tabix/kafka-connect-iceberg:0.0.10"
+
+          # --- AWS Credentials (for local development only, replace with your keys) ---
+          # For production on EC2, use IAM roles attached to the EC2 instance instead.
+          AWS_ACCESS_KEY_ID: ""
+          AWS_SECRET_ACCESS_KEY: ""
+          AWS_REGION: "us-west-2" # Your AWS region
+
+          # Standard Connect settings
+          CONNECT_REST_ADVERTISED_HOST_NAME: connect
+          CONNECT_PRODUCER_INTERCEPTOR_CLASSES: ""
+          CONNECT_CONSUMER_INTERCEPTOR_CLASSES: ""
+          CONNECT_LOG4J_ROOT_LOGLEVEL: INFO
+          CONNECT_LOG4J_LOGGERS: org.apache.kafka.connect.s3=DEBUG,org.apache.iceberg=DEBUG # Detailed logging
+          CONNECT_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+          CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+        volumes:
+          - connect-data:/var/lib/kafka-connect
+        healthcheck:
+          test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
+          interval: 10s
+          timeout: 500s
+          retries: 5
+
     volumes:
-      - zookeeper-data:/var/lib/zookeeper/data # Persistent data for ZooKeeper
-      - zookeeper-log:/var/lib/zookeeper/log   # Persistent logs for ZooKeeper
-
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0 # Using Confluent's Kafka broker image
-    hostname: kafka
-    container_name: kafka
-    depends_on:
-      - zookeeper # Ensure ZooKeeper starts before Kafka
-    ports:
-      - "9092:9092"   # For external clients (e.g., your Python producer on your host machine)
-      - "29092:29092" # For internal Docker network communication (other containers in this compose file)
-    environment:
-      KAFKA_BROKER_ID: 1 # Unique ID for this Kafka broker
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181 # How Kafka finds ZooKeeper (using Docker service name)
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT # Define listener protocols
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092 # Crucial for clients
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1 # For single-broker setup, use 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0 # Speeds up consumer group rebalancing for dev
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-    volumes:
-      - kafka-data:/var/lib/kafka/data # Persistent data for Kafka broker
-
-volumes:
-  zookeeper-data:
-  zookeeper-log:
-  kafka-data:
+      zookeeper-data:
+      zookeeper-log:
+      kafka-data:
+      connect-data:
+    
